@@ -1,0 +1,6 @@
+# Snatch Project Guardrails (Vibe Coding JS)
+- **Language**: Strictly TypeScript/Next.js. NO PYTHON.
+- **SDK**: Use Vercel AI SDK (`import { ToolLoopAgent } from 'ai'`).
+- **Pattern**: Blackboard architecture via MongoDB. Agents read/write to the `requests` collection to communicate.
+- **Tooling**: Define tools using the `tool()` function from the `ai` package.
+- **Limit**: Strictly enforce the 3-round haggle limit in the Negotiator system prompt.

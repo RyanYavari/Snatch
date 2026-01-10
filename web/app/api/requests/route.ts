@@ -36,9 +36,12 @@ export async function POST(request: NextRequest) {
     const newRequest = new Request({
       status: RequestStatus.NEW,
       budget: Number(budget),
-      target_image_url: imageUrl,
-      voyage_embedding: [],
-      negotiation_log: [],
+      target_item: {
+        image_url: imageUrl,
+        embedding: [],
+      },
+      alternatives: [],
+      negotiation_history: [],
     });
 
     const savedRequest = await newRequest.save();

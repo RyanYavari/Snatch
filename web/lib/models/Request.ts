@@ -4,30 +4,50 @@ export enum RequestStatus {
   NEW = 'NEW',
   FOUND = 'FOUND',
   NEGOTIATING = 'NEGOTIATING',
+  RETRY_SEARCH = 'RETRY_SEARCH',
   AGREED = 'AGREED',
   PAID = 'PAID',
-  RETRY_SEARCH = 'RETRY_SEARCH',
+  FAILED = 'FAILED',
+}
+
+export interface NegotiationHistoryEntry {
+  role: 'negotiator' | 'seller';
+  content: string;
+  offer: number;
+  timestamp: Date;
+}
+
+export interface TargetItem {
+  description?: string;
+  image_url: string;
+  embedding: number[]; // 1024-dim from Voyage
+}
+
+export interface FoundItem {
+  item_id: string;
+  name: string;
+  selling_price: number;
+  price?: number; // Legacy field, use selling_price
+  minimum_price?: number;
+  seller?: string;
+  seller_wallet: string;
+  description?: string;
+  url?: string;
+  [key: string]: any;
 }
 
 export interface IRequest extends Document {
   status: RequestStatus;
   budget: number;
-  target_image_url: string;
-  voyage_embedding: number[];
-  found_item?: {
-    name?: string;
-    url?: string;
-    price?: number;
-    description?: string;
-    [key: string]: any;
-  };
-  negotiation_log: Array<{
-    timestamp: Date;
-    agent: string;
-    message: string;
-    price?: number;
-    [key: string]: any;
-  }>;
+  target_item: TargetItem;
+  found_item?: FoundItem;
+  alternatives: FoundItem[]; // Top 5 matches from vector search
+  negotiation_history: NegotiationHistoryEntry[];
+  offer_id?: string; // UUID of accepted offer from Seller Agent
+  buyer_wallet?: string; // Buyer's wallet address for payment
+  negotiation_rounds?: number; // Current round (0-3)
+  retry_feedback?: string;
+  tx_hash?: string;
   createdAt: Date;
   updatedAt: Date;
 }
@@ -46,29 +66,59 @@ const RequestSchema: Schema = new Schema(
       required: true,
       min: 0,
     },
-    target_image_url: {
-      type: String,
-      required: true,
-    },
-    voyage_embedding: {
-      type: [Number],
-      default: [],
+    target_item: {
+      description: String,
+      image_url: { type: String, required: true },
+      embedding: { type: [Number], default: [] }, // 1024-dim from Voyage
     },
     found_item: {
-      type: Schema.Types.Mixed,
-      default: null,
+      item_id: String,
+      name: String,
+      selling_price: Number,
+      price: Number, // Legacy field
+      minimum_price: Number,
+      seller: String,
+      seller_wallet: String,
+      description: String,
+      url: String,
     },
-    negotiation_log: {
+    alternatives: {
       type: [
         {
-          timestamp: { type: Date, default: Date.now },
-          agent: String,
-          message: String,
-          price: Number,
+          item_id: String,
+          name: String,
+          selling_price: Number,
+          price: Number, // Legacy field
+          minimum_price: Number,
+          seller: String,
+          seller_wallet: String,
+          description: String,
+          url: String,
         },
       ],
       default: [],
     },
+    negotiation_history: {
+      type: [
+        {
+          role: { type: String, enum: ['negotiator', 'seller'] },
+          content: String,
+          offer: Number,
+          timestamp: { type: Date, default: Date.now },
+        },
+      ],
+      default: [],
+    },
+    offer_id: String,
+    buyer_wallet: String,
+    negotiation_rounds: {
+      type: Number,
+      default: 0,
+      min: 0,
+      max: 3,
+    },
+    retry_feedback: String,
+    tx_hash: String,
   },
   {
     timestamps: true,
@@ -77,7 +127,7 @@ const RequestSchema: Schema = new Schema(
 );
 
 // Index for vector search (MongoDB Atlas will create the vector search index separately)
-RequestSchema.index({ voyage_embedding: '2dsphere' });
+RequestSchema.index({ 'target_item.embedding': '2dsphere' });
 
 export const Request: Model<IRequest> =
   mongoose.models.Request || mongoose.model<IRequest>('Request', RequestSchema);

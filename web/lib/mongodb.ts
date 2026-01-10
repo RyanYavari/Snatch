@@ -1,9 +1,20 @@
 import mongoose from 'mongoose';
+import { config } from 'dotenv';
+import { resolve } from 'path';
+
+// Try to load from root .env file if MONGODB_URI is not set
+if (!process.env.MONGODB_URI) {
+  config({ path: resolve(process.cwd(), '../.env') });
+  // Also try current directory
+  if (!process.env.MONGODB_URI) {
+    config({ path: resolve(process.cwd(), '.env') });
+  }
+}
 
 const MONGODB_URI = process.env.MONGODB_URI!;
 
 if (!MONGODB_URI) {
-  throw new Error('Please define the MONGODB_URI environment variable inside .env.local');
+  throw new Error('Please define the MONGODB_URI environment variable in .env file');
 }
 
 interface MongooseCache {
