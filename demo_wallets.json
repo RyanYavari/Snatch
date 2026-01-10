@@ -1,0 +1,12 @@
+{
+  "buyer": {
+    "address": "0x830443De258A5E739e004345f675c5A378584085",
+    "private_key": "d6067f8a86b9f1db0fb4183a9bba1804598d73d0e7a461225426ad9590b482f3",
+    "mnemonic": "blur fashion suit bus adjust swear charge fall brass inspire laptop canyon"
+  },
+  "seller": {
+    "address": "0x33084A8155C172D02A5a02e03b55B04899c474d9",
+    "private_key": "52d84475214d32c360f9ff2e86895305b666e56c078a01ee822f8a4adaf6e3ef",
+    "mnemonic": "derive raw top obvious bubble month receive debate space scene east misery"
+  }
+}
