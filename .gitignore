@@ -43,3 +43,4 @@ logs/
 # CDP API Key
 cdp_api_key.json
 demo_wallets.json
+accepted_offers.json

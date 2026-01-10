@@ -9,14 +9,18 @@ Usage:
 
 Endpoints:
     POST /pay       - Send USDC from buyer to seller
-    GET  /balance   - Check wallet USDC balance
+    POST /quick-pay - Send USDC using demo wallets (with offer validation)
+    POST /seller    - Negotiate an offer (accept/decline)
+    POST /balance   - Check wallet USDC balance
     GET  /health    - Health check
 """
 
 import json
 import os
+import uuid
+import random
 from pathlib import Path
-from typing import Optional
+from typing import Optional, Dict
 from dotenv import load_dotenv
 
 from fastapi import FastAPI, HTTPException
@@ -63,6 +67,60 @@ ERC20_ABI = [
 ]
 
 # =============================================================================
+# Accepted Offers Storage (JSON file)
+# =============================================================================
+
+OFFERS_FILE = Path(__file__).parent.parent / "accepted_offers.json"
+
+
+def load_offers() -> Dict[str, dict]:
+    """Load accepted offers from JSON file."""
+    if OFFERS_FILE.exists():
+        try:
+            with open(OFFERS_FILE, 'r') as f:
+                return json.load(f)
+        except (json.JSONDecodeError, IOError):
+            return {}
+    return {}
+
+
+def save_offers(offers: Dict[str, dict]) -> None:
+    """Save accepted offers to JSON file."""
+    with open(OFFERS_FILE, 'w') as f:
+        json.dump(offers, f, indent=2)
+
+
+def get_offer(offer_id: str) -> Optional[dict]:
+    """Get a specific offer by ID."""
+    offers = load_offers()
+    return offers.get(offer_id)
+
+
+def add_offer(offer_id: str, offer_data: dict) -> None:
+    """Add a new offer to storage."""
+    offers = load_offers()
+    offers[offer_id] = offer_data
+    save_offers(offers)
+
+
+def update_offer(offer_id: str, updates: dict) -> None:
+    """Update an existing offer."""
+    offers = load_offers()
+    if offer_id in offers:
+        offers[offer_id].update(updates)
+        save_offers(offers)
+
+
+def remove_offer(offer_id: str) -> Optional[dict]:
+    """Remove an offer and return it."""
+    offers = load_offers()
+    if offer_id in offers:
+        removed = offers.pop(offer_id)
+        save_offers(offers)
+        return removed
+    return None
+
+# =============================================================================
 # Pydantic Models
 # =============================================================================
 
@@ -102,7 +160,36 @@ class BalanceResponse(BaseModel):
 class QuickPaymentRequest(BaseModel):
     """Simplified payment request using stored wallet credentials."""
     amount_usdc: float = Field(..., gt=0, description="Amount of USDC to send")
-    use_demo_wallets: bool = Field(True, description="Use demo wallets from .env/json")
+    offer_id: Optional[str] = Field(None, description="Offer ID from negotiation (required for validated payments)")
+    buyer_wallet: Optional[str] = Field(None, description="Buyer wallet address (validated against offer)")
+    seller_wallet: Optional[str] = Field(None, description="Seller wallet address (validated against offer)")
+    use_demo_wallets: bool = Field(True, description="Use demo wallets from .env/json if wallets not provided")
+
+
+class OfferRequest(BaseModel):
+    """Request body for making an offer to the seller."""
+    item: str = Field(..., description="Item or service being purchased")
+    offer_amount: float = Field(..., gt=0, description="Offered amount in USDC")
+    buyer_address: Optional[str] = Field(None, description="Buyer wallet address")
+    seller_address: Optional[str] = Field(None, description="Seller wallet address")
+
+
+class OfferResponse(BaseModel):
+    """Response from the seller after negotiation."""
+    accepted: bool
+    offer_id: Optional[str] = None
+    item: str
+    offered_amount: float
+    accepted_amount: Optional[float] = None
+    seller_wallet: Optional[str] = None
+    counter_offer: Optional[float] = None
+    message: str
+
+
+class PendingOffersResponse(BaseModel):
+    """Response with all pending/accepted offers."""
+    offers: Dict[str, dict]
+    count: int
 
 
 # =============================================================================
@@ -261,10 +348,13 @@ async def root():
         "name": "x402 Payment Server",
         "network": "Base Sepolia",
         "usdc_contract": USDC_ADDRESS,
+        "pending_offers": len(load_offers()),
         "endpoints": {
+            "POST /seller": "Negotiate an offer (returns offer_id if accepted)",
+            "POST /quick-pay": "Send USDC using demo wallets (validates offer_id)",
             "POST /pay": "Send USDC payment with full credentials",
-            "POST /quick-pay": "Send USDC using demo wallets",
             "POST /balance": "Check wallet USDC balance",
+            "GET /offers": "View all pending offers",
             "GET /health": "Health check"
         }
     }
@@ -282,8 +372,82 @@ async def health_check():
         "status": "healthy",
         "network": "base-sepolia",
         "chain_id": CHAIN_ID,
-        "connected": True
+        "connected": True,
+        "pending_offers": len(load_offers())
     }
+
+
+@app.post("/seller", response_model=OfferResponse)
+async def negotiate_offer(request: OfferRequest):
+    """
+    Seller negotiation endpoint.
+    
+    Simulates a negotiation where the seller has a 50/50 chance
+    of accepting or declining any offer.
+    If accepted, generates an offer_id and stores the accepted amount along with wallet addresses.
+    """
+    # Get seller address from request or use demo wallet
+    seller_address = request.seller_address
+    if not seller_address:
+        _, _, seller_address = load_demo_wallets()
+    
+    # Get buyer address from request or use demo wallet
+    buyer_address = request.buyer_address
+    if not buyer_address:
+        buyer_address, _, _ = load_demo_wallets()
+    
+    # 50/50 chance of acceptance
+    if random.random() >= 0.5:
+        # Accept the offer
+        offer_id = str(uuid.uuid4())
+        
+        # Store in JSON file with wallet addresses
+        add_offer(offer_id, {
+            "amount_usdc": request.offer_amount,
+            "item": request.item,
+            "status": "accepted",
+            "buyer_address": buyer_address,
+            "seller_address": seller_address
+        })
+        
+        return OfferResponse(
+            accepted=True,
+            offer_id=offer_id,
+            item=request.item,
+            offered_amount=request.offer_amount,
+            accepted_amount=request.offer_amount,
+            seller_wallet=seller_address,
+            message=f"Offer accepted! Use offer_id '{offer_id}' with seller_wallet '{seller_address}' to complete payment."
+        )
+    else:
+        # Decline
+        return OfferResponse(
+            accepted=False,
+            item=request.item,
+            offered_amount=request.offer_amount,
+            message="Offer declined. Try again!"
+        )
+
+
+@app.get("/offers", response_model=PendingOffersResponse)
+async def get_pending_offers():
+    """View all pending/accepted offers in the system."""
+    offers = load_offers()
+    return PendingOffersResponse(
+        offers=offers,
+        count=len(offers)
+    )
+
+
+@app.delete("/offers/{offer_id}")
+async def cancel_offer(offer_id: str):
+    """Cancel/remove an offer from the system."""
+    removed = remove_offer(offer_id)
+    
+    if removed is None:
+        raise HTTPException(status_code=404, detail=f"Offer {offer_id} not found")
+    
+    return {"message": f"Offer {offer_id} cancelled", "offer": removed}
 
 
 @app.post("/balance", response_model=BalanceResponse)
@@ -358,17 +522,70 @@ async def send_payment(request: PaymentRequest):
 @app.post("/quick-pay", response_model=PaymentResponse)
 async def quick_payment(request: QuickPaymentRequest):
     """
-    Send USDC using the demo wallets stored in .env or demo_wallets.json.
+    Send USDC payment with offer validation.
     
-    This is a convenience endpoint for testing.
+    If offer_id is provided, validates that:
+    1. The offer exists in the accepted offers
+    2. The payment amount matches the accepted amount
+    3. The buyer_wallet matches the offer's buyer_address
+    4. The seller_wallet matches the offer's seller_address
+    
+    If validation fails, returns an error.
     """
-    buyer_addr, buyer_key, seller_addr = load_demo_wallets()
+    # Load demo wallets as fallback
+    demo_buyer_addr, buyer_key, demo_seller_addr = load_demo_wallets()
+    
+    # Use provided wallets or fall back to demo wallets
+    buyer_addr = request.buyer_wallet or demo_buyer_addr
+    seller_addr = request.seller_wallet or demo_seller_addr
     
     if not all([buyer_addr, buyer_key, seller_addr]):
         raise HTTPException(
             status_code=400,
-            detail="Demo wallets not configured. Run demo_wallets.py first."
+            detail="Wallets not configured. Provide buyer_wallet and seller_wallet, or run demo_wallets.py first."
         )
+    
+    # Validate offer_id if provided
+    if request.offer_id:
+        offer = get_offer(request.offer_id)
+        
+        if offer is None:
+            raise HTTPException(
+                status_code=404,
+                detail=f"Offer ID '{request.offer_id}' not found. Negotiate first via POST /seller"
+            )
+        
+        expected_amount = offer["amount_usdc"]
+        expected_seller = offer.get("seller_address", "").lower()
+        expected_buyer = offer.get("buyer_address", "").lower()
+        
+        # Check if amounts match (with small tolerance for floating point)
+        if abs(request.amount_usdc - expected_amount) > 0.000001:
+            raise HTTPException(
+                status_code=400,
+                detail=f"Amount mismatch! Offer requires {expected_amount} USDC, but {request.amount_usdc} USDC was sent."
+            )
+        
+        # Check if seller_wallet matches
+        if expected_seller and seller_addr.lower() != expected_seller:
+            raise HTTPException(
+                status_code=400,
+                detail=f"Seller wallet mismatch! Offer requires seller '{expected_seller}', but '{seller_addr}' was provided."
+            )
+        
+        # Check if buyer_wallet matches
+        if expected_buyer and buyer_addr.lower() != expected_buyer:
+            raise HTTPException(
+                status_code=400,
+                detail=f"Buyer wallet mismatch! Offer requires buyer '{expected_buyer}', but '{buyer_addr}' was provided."
+            )
+        
+        # Check if already paid
+        if offer.get("status") == "paid":
+            raise HTTPException(
+                status_code=400,
+                detail=f"Offer '{request.offer_id}' has already been paid."
+            )
     
     w3 = get_web3_connection()
     
@@ -383,6 +600,13 @@ async def quick_payment(request: QuickPaymentRequest):
             seller_address=seller_addr,
             amount_usdc=request.amount_usdc
         )
+        
+        # Mark offer as paid if offer_id was provided
+        if request.offer_id and result["success"]:
+            update_offer(request.offer_id, {
+                "status": "paid",
+                "tx_hash": result["tx_hash"]
+            })
         
         # Get updated balances
         buyer_balance = get_usdc_balance(w3, buyer_addr)
