@@ -1,0 +1,14 @@
+{
+  "name": "x402-faucet",
+  "version": "1.0.0",
+  "description": "CDP Faucet utilities for x402 demo",
+  "type": "module",
+  "scripts": {
+    "faucet": "node request_faucet.js"
+  },
+  "dependencies": {
+    "@coinbase/cdp-sdk": "^1.43.0",
+    "dotenv": "^16.3.0"
+  }
+}
+

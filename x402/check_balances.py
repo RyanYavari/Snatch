@@ -2,7 +2,7 @@
 Check Wallet Balances - Base Sepolia Testnet
 =============================================
 
-Verify ETH and USDC balances for your demo wallets.
+Verify USDC balances for your demo wallets.
 """
 
 import json
@@ -47,7 +47,7 @@ def get_web3_connection():
 
 
 def check_balances():
-    """Check ETH and USDC balances for buyer and seller wallets."""
+    """Check USDC balances for buyer and seller wallets."""
     from web3 import Web3
     
     # Get wallet addresses from environment or JSON file
@@ -102,32 +102,27 @@ def check_balances():
     )
     
     print("=" * 60)
-    print("💰 WALLET BALANCES - Base Sepolia Testnet")
+    print("💰 USDC BALANCES - Base Sepolia Testnet")
     print("=" * 60)
     
-    needs_funding = []
+    needs_funding = False
     
     for role, addr in [("BUYER", buyer_addr), ("SELLER", seller_addr)]:
         try:
-            eth_balance = w3.from_wei(w3.eth.get_balance(addr), 'ether')
             usdc_raw = usdc_contract.functions.balanceOf(
                 Web3.to_checksum_address(addr)
             ).call()
             usdc_balance = usdc_raw / 1_000_000  # USDC has 6 decimals
             
-            eth_status = "✅" if float(eth_balance) > 0.001 else "❌"
             usdc_status = "✅" if usdc_balance > 0 else "❌"
             
             print(f"\n{role}")
             print(f"  Address: {addr}")
-            print(f"  {eth_status} ETH:  {eth_balance:.6f}")
             print(f"  {usdc_status} USDC: {usdc_balance:.2f}")
             
-            # Track what needs funding
-            if float(eth_balance) < 0.001:
-                needs_funding.append((role, "ETH"))
+            # Track if buyer needs funding
             if role == "BUYER" and usdc_balance == 0:
-                needs_funding.append((role, "USDC"))
+                needs_funding = True
                 
         except Exception as e:
             print(f"\n{role}")
@@ -139,22 +134,12 @@ def check_balances():
         print("\n" + "=" * 60)
         print("⚠️  FUNDING NEEDED")
         print("=" * 60)
-        
-        eth_needed = any(f[1] == "ETH" for f in needs_funding)
-        usdc_needed = any(f[1] == "USDC" for f in needs_funding)
-        
-        if eth_needed:
-            print("\n📍 Get Base Sepolia ETH (for gas):")
-            print("   • https://www.coinbase.com/faucets/base-ethereum-sepolia-faucet")
-            print("   • https://faucet.quicknode.com/base/sepolia")
-        
-        if usdc_needed:
-            print("\n📍 Get Base Sepolia USDC (for payments):")
-            print("   • https://faucet.circle.com/ (select Base Sepolia)")
-            print(f"   • Fund buyer: {buyer_addr}")
+        print("\n📍 Get Base Sepolia USDC (for payments):")
+        print("   • https://faucet.circle.com/ (select Base Sepolia)")
+        print(f"   • Fund buyer: {buyer_addr}")
     else:
         print("\n" + "=" * 60)
-        print("✅ All wallets funded and ready!")
+        print("✅ Wallets funded and ready!")
         print("=" * 60)
     
     print("\n📊 View on Explorer:")
@@ -165,4 +150,3 @@ def check_balances():
 
 if __name__ == "__main__":
     check_balances()
-

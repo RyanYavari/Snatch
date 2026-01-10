@@ -143,26 +143,16 @@ def print_funding_instructions(wallets: dict):
     print("🚰 FUNDING YOUR DEMO WALLETS")
     print("=" * 60)
     
-    print("\n📍 Step 1: Get Base Sepolia ETH (for gas)")
-    print("-" * 40)
-    print("   Visit one of these faucets:")
-    print("   • https://www.alchemy.com/faucets/base-sepolia")
-    print("   • https://faucet.quicknode.com/base/sepolia")
-    print("   • https://www.coinbase.com/faucets/base-ethereum-sepolia-faucet")
-    print(f"\n   Fund BUYER wallet: {buyer_addr}")
-    print(f"   Fund SELLER wallet: {seller_addr}")
-    
-    print("\n📍 Step 2: Get Base Sepolia USDC (for payments)")
+    print("\n📍 Step 1: Get Base Sepolia USDC (for payments)")
     print("-" * 40)
     print("   The x402 protocol uses USDC for payments.")
     print("   USDC Contract on Base Sepolia: 0x036CbD53842c5426634e7929541eC2318f3dCF7e")
-    print("\n   Options to get testnet USDC:")
-    print("   • Circle Faucet: https://faucet.circle.com/")
+    print("\n   Get testnet USDC from Circle Faucet:")
+    print("   • https://faucet.circle.com/")
     print("     (Select 'Base Sepolia' network)")
-    print("   • Bridge from other testnets if needed")
     print(f"\n   Fund BUYER wallet with USDC: {buyer_addr}")
     
-    print("\n📍 Step 3: Verify balances")
+    print("\n📍 Step 2: Verify balances")
     print("-" * 40)
     print("   Check your wallets on Base Sepolia Explorer:")
     print(f"   • Buyer:  https://sepolia.basescan.org/address/{buyer_addr}")
@@ -170,30 +160,6 @@ def print_funding_instructions(wallets: dict):
     
     print("\n💡 TIP: You only need to fund the BUYER wallet with USDC")
     print("   The SELLER wallet just receives payments.")
-    print("   Both need a small amount of ETH for gas fees.")
-
-
-def check_wallet_balance(address: str):
-    """
-    Check the ETH balance of a wallet on Base Sepolia.
-    
-    Args:
-        address: Wallet address to check
-        
-    Returns:
-        float: Balance in ETH
-    """
-    try:
-        from web3 import Web3
-        
-        w3 = Web3(Web3.HTTPProvider("https://sepolia.base.org"))
-        balance_wei = w3.eth.get_balance(address)
-        balance_eth = w3.from_wei(balance_wei, 'ether')
-        
-        return float(balance_eth)
-    except Exception as e:
-        print(f"   Error checking balance: {e}")
-        return 0.0
 
 
 def check_usdc_balance(address: str):
@@ -244,22 +210,19 @@ def check_usdc_balance(address: str):
 
 def check_all_balances(wallets: dict):
     """
-    Check and display balances for both wallets.
+    Check and display USDC balances for both wallets.
     """
     print("\n" + "=" * 60)
-    print("💰 WALLET BALANCES")
+    print("💰 USDC BALANCES")
     print("=" * 60)
     
     for role in ['buyer', 'seller']:
         addr = wallets[role]['address']
-        eth_balance = check_wallet_balance(addr)
         usdc_balance = check_usdc_balance(addr)
         
-        status_eth = "✅" if eth_balance > 0.001 else "❌"
-        status_usdc = "✅" if usdc_balance > 0 else "⚠️"
+        status_usdc = "✅" if usdc_balance > 0 else "❌"
         
         print(f"\n{role.upper()} ({addr[:10]}...{addr[-6:]})")
-        print(f"   {status_eth} ETH:  {eth_balance:.6f}")
         print(f"   {status_usdc} USDC: {usdc_balance:.2f}")
 
 
