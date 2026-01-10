@@ -147,12 +147,11 @@ def send_usdc_payment(amount_usdc: float = 0.0001):
     
     print(f"\n⛽ Gas Balance: {float(eth_balance):.6f} ETH")
     
-    if float(eth_balance) < 0.0001:
+    if float(eth_balance) < 0.00005:
         print("\n❌ Insufficient ETH for gas fees!")
-        print("\n📍 Get Base Sepolia ETH from:")
-        print("   • https://www.coinbase.com/faucets/base-ethereum-sepolia-faucet")
-        print("   • https://faucet.quicknode.com/base/sepolia")
-        print(f"\n   Fund wallet: {buyer_addr}")
+        print("\n📍 Get more ETH by running:")
+        print("   node x402/request_faucet.js")
+        print(f"\n   Wallet: {buyer_addr}")
         return False
     
     # Check balances before
