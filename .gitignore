@@ -39,3 +39,7 @@ logs/
 
 # MongoDB
 *.bson
+
+# CDP API Key
+cdp_api_key.json
+demo_wallets.json
