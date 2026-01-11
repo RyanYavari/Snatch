@@ -19,6 +19,7 @@ import json
 import os
 import uuid
 import random
+import asyncio
 from pathlib import Path
 from typing import Optional, Dict
 from dotenv import load_dotenv
@@ -170,6 +171,8 @@ class OfferRequest(BaseModel):
     """Request body for making an offer to the seller."""
     item: str = Field(..., description="Item or service being purchased")
     offer_amount: float = Field(..., gt=0, description="Offered amount in USDC")
+    size: Optional[str] = Field(None, description="Size of the item (S, M, L, XL, etc.)")
+    asking_price: Optional[float] = Field(None, description="Seller's asking price")
     buyer_address: Optional[str] = Field(None, description="Buyer wallet address")
     seller_address: Optional[str] = Field(None, description="Seller wallet address")
 
@@ -179,6 +182,7 @@ class OfferResponse(BaseModel):
     accepted: bool
     offer_id: Optional[str] = None
     item: str
+    size: Optional[str] = None
     offered_amount: float
     accepted_amount: Optional[float] = None
     seller_wallet: Optional[str] = None
@@ -382,10 +386,13 @@ async def negotiate_offer(request: OfferRequest):
     """
     Seller negotiation endpoint.
     
-    Simulates a negotiation where the seller has a 50/50 chance
-    of accepting or declining any offer.
-    If accepted, generates an offer_id and stores the accepted amount along with wallet addresses.
+    Simulates negotiation with a flat 25% chance of accepting any offer.
+    Includes random delays up to 5 seconds to simulate realistic negotiation timing.
     """
+    # Add random delay up to 5 seconds to simulate negotiation
+    delay = random.uniform(1.0, 5.0)
+    await asyncio.sleep(delay)
+    
     # Get seller address from request or use demo wallet
     seller_address = request.seller_address
     if not seller_address:
@@ -396,8 +403,10 @@ async def negotiate_offer(request: OfferRequest):
     if not buyer_address:
         buyer_address, _, _ = load_demo_wallets()
     
-    # 50/50 chance of acceptance
-    if random.random() >= 0.5:
+    asking_price = request.asking_price or request.offer_amount * 1.2  # Default asking is 20% higher
+    
+    # Flat 25% chance of accepting any offer
+    if random.random() < 0.25:
         # Accept the offer
         offer_id = str(uuid.uuid4())
         
@@ -405,6 +414,7 @@ async def negotiate_offer(request: OfferRequest):
         add_offer(offer_id, {
             "amount_usdc": request.offer_amount,
             "item": request.item,
+            "size": request.size,
             "status": "accepted",
             "buyer_address": buyer_address,
             "seller_address": seller_address
@@ -414,18 +424,37 @@ async def negotiate_offer(request: OfferRequest):
             accepted=True,
             offer_id=offer_id,
             item=request.item,
+            size=request.size,
             offered_amount=request.offer_amount,
             accepted_amount=request.offer_amount,
             seller_wallet=seller_address,
-            message=f"Offer accepted! Use offer_id '{offer_id}' with seller_wallet '{seller_address}' to complete payment."
+            message=f"Deal! I'll accept {request.offer_amount} USDC for the {request.item}."
         )
     else:
-        # Decline
+        # Decline with counter-offer
+        # Counter somewhere between offer and asking price
+        counter_multiplier = random.uniform(0.85, 0.95)
+        counter_amount = round(asking_price * counter_multiplier, 4)
+        
+        # Make sure counter is higher than offer
+        if counter_amount <= request.offer_amount:
+            counter_amount = round(request.offer_amount * 1.1, 4)
+        
+        messages = [
+            f"I appreciate the offer, but {request.offer_amount} USDC is too low. How about {counter_amount} USDC?",
+            f"That's a bit low for me. I could do {counter_amount} USDC.",
+            f"I can't go that low. My best price is {counter_amount} USDC.",
+            f"Hmm, I was hoping for more. Would you consider {counter_amount} USDC?",
+            f"Thanks for the offer! I'd need at least {counter_amount} USDC to make this work.",
+        ]
+        
         return OfferResponse(
             accepted=False,
             item=request.item,
+            size=request.size,
             offered_amount=request.offer_amount,
-            message="Offer declined. Try again!"
+            counter_offer=counter_amount,
+            message=random.choice(messages)
         )
 
 
