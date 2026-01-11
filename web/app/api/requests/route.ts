@@ -38,7 +38,8 @@ export async function POST(request: NextRequest) {
       budget: Number(budget),
       target_item: {
         image_url: imageUrl,
-        embedding: [],
+        image_embedding: [], // 2048-dim, will be populated by Scout agent
+        metadata_embedding: [], // 2048-dim, optional
       },
       alternatives: [],
       negotiation_history: [],

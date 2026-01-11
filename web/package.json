@@ -21,7 +21,6 @@
     "@types/react-dom": "^18.2.18",
     "@types/uuid": "^9.0.7",
     "ai": "^3.0.0",
-    "@voyageai/voyageai": "^0.2.0",
     "uuid": "^9.0.1",
     "dotenv": "^16.4.5"
   },

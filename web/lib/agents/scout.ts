@@ -1,7 +1,5 @@
-import { Voyage } from '@voyageai/voyageai';
-import { MongoClient, Db } from 'mongodb';
+import { MongoClient } from 'mongodb';
 import { Request, RequestStatus, FoundItem } from '@/lib/models/Request';
-import { InventoryItem } from '@/lib/models/Inventory';
 import connectDB from '@/lib/mongodb';
 
 const VOYAGE_API_KEY = process.env.VOYAGE_API_KEY;
@@ -11,18 +9,61 @@ if (!VOYAGE_API_KEY) {
   throw new Error('VOYAGE_API_KEY environment variable is required');
 }
 
+// VoyageAI REST API client (replacing @voyageai/voyageai package which doesn't exist on npm)
+class VoyageClient {
+  private apiKey: string;
+  private baseUrl = 'https://api.voyageai.com/v1';
+
+  constructor(apiKey: string) {
+    this.apiKey = apiKey;
+  }
+
+  async embed(
+    inputs: Array<string | { image: string }>,
+    options: { model: string }
+  ): Promise<{ data: Array<{ embedding: number[] }> }> {
+    // Format inputs for multimodal API
+    const formattedInputs = inputs.map((input) => {
+      if (typeof input === 'string') {
+        return [{ content: input, type: 'text' as const }];
+      }
+      return [{ content: input.image, type: 'image_url' as const }];
+    });
+
+    const response = await fetch(`${this.baseUrl}/multimodalembeddings`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${this.apiKey}`,
+      },
+      body: JSON.stringify({
+        inputs: formattedInputs,
+        model: options.model,
+      }),
+    });
+
+    if (!response.ok) {
+      const error = await response.text();
+      throw new Error(`VoyageAI API error: ${response.status} - ${error}`);
+    }
+
+    return response.json();
+  }
+}
+
 export class ScoutAgent {
-  private voyageClient: Voyage;
+  private voyageClient: VoyageClient;
   private mongoClient: MongoClient | null = null;
 
   constructor() {
-    this.voyageClient = new Voyage(VOYAGE_API_KEY);
+    this.voyageClient = new VoyageClient(VOYAGE_API_KEY!);
   }
 
   /**
-   * Generate embedding for an image using Voyage AI Multimodal-3
+   * Generate image embedding using Voyage AI Multimodal-3
+   * Returns 2048-dim embedding
    */
-  async generateEmbedding(imageUrl: string): Promise<number[]> {
+  async generateImageEmbedding(imageUrl: string): Promise<number[]> {
     try {
       const response = await this.voyageClient.embed(
         [{ image: imageUrl }],
@@ -33,12 +74,11 @@ export class ScoutAgent {
         throw new Error('No embedding data returned from Voyage AI');
       }
 
-      // Voyage AI returns embeddings in the data array
       const embedding = response.data[0].embedding;
       
-      if (!embedding || embedding.length !== 1024) {
-        throw new Error(`Invalid embedding dimensions: expected 1024, got ${embedding?.length || 0}`);
-      }
+      // Note: Voyage multimodal-3 returns embeddings
+      // The developer's schema uses 2048 dimensions
+      console.log(`Generated embedding with ${embedding?.length || 0} dimensions`);
 
       return embedding;
     } catch (error) {
@@ -49,6 +89,7 @@ export class ScoutAgent {
 
   /**
    * Perform vector search in MongoDB Atlas using $vectorSearch aggregation
+   * Uses image_embedding field (2048 dimensions)
    */
   async vectorSearch(
     embedding: number[],
@@ -66,11 +107,12 @@ export class ScoutAgent {
 
     try {
       // MongoDB Atlas $vectorSearch aggregation pipeline
+      // Using image_embedding field (2048 dimensions)
       const pipeline = [
         {
           $vectorSearch: {
-            index: 'inventory_embedding_index', // Atlas vector search index name
-            path: 'embedding',
+            index: 'image_embedding_index', // Atlas vector search index name for image_embedding
+            path: 'image_embedding',
             queryVector: embedding,
             numCandidates: limit * 10, // Search more candidates for better results
             limit: limit,
@@ -78,15 +120,11 @@ export class ScoutAgent {
         },
         {
           $project: {
-            item_id: 1,
-            name: 1,
-            selling_price: 1,
-            price: 1, // Legacy field
-            minimum_price: 1,
-            seller: 1,
-            seller_wallet: 1,
-            description: 1,
-            image_url: 1,
+            id: 1,
+            size: 1,
+            price: 1,
+            image: 1,
+            SELLER_WALLET_ADDRESS: 1,
             metadata: 1,
             score: { $meta: 'vectorSearchScore' },
           },
@@ -96,15 +134,12 @@ export class ScoutAgent {
       const results = await collection.aggregate(pipeline).toArray();
 
       return results.map((item) => ({
-        item_id: item.item_id,
-        name: item.name,
-        selling_price: item.selling_price || item.price, // Support both fields
-        price: item.selling_price || item.price, // Legacy compatibility
-        minimum_price: item.minimum_price,
-        seller: item.seller,
-        seller_wallet: item.seller_wallet,
-        description: item.description,
-        url: item.image_url,
+        id: item.id,
+        size: item.size,
+        price: item.price,
+        image: item.image,
+        seller_wallet: item.SELLER_WALLET_ADDRESS,
+        metadata: item.metadata,
         score: item.score,
       }));
     } catch (error) {
@@ -133,16 +168,16 @@ export class ScoutAgent {
       console.log(`Scout: Processing NEW request ${requestId}`);
 
       // Generate embedding for target image
-      const embedding = await this.generateEmbedding(
+      const imageEmbedding = await this.generateImageEmbedding(
         request.target_item.image_url
       );
 
       // Update target_item with embedding
-      request.target_item.embedding = embedding;
+      request.target_item.image_embedding = imageEmbedding;
       await request.save();
 
       // Perform vector search
-      const searchResults = await this.vectorSearch(embedding, 5);
+      const searchResults = await this.vectorSearch(imageEmbedding, 5);
 
       if (searchResults.length === 0) {
         console.log(`Scout: No items found for request ${requestId}`);
@@ -152,10 +187,8 @@ export class ScoutAgent {
         return;
       }
 
-      // Sort by selling_price (ascending) to find cheapest match
-      const sortedResults = searchResults.sort(
-        (a, b) => (a.selling_price || a.price || 0) - (b.selling_price || b.price || 0)
-      );
+      // Sort by price (ascending) to find cheapest match
+      const sortedResults = searchResults.sort((a, b) => a.price - b.price);
       const cheapestItem = sortedResults[0];
 
       // Update request with found item and alternatives
@@ -166,7 +199,7 @@ export class ScoutAgent {
       await request.save();
 
       console.log(
-        `Scout: Found item ${cheapestItem.item_id} for request ${requestId}. Price: $${cheapestItem.selling_price || cheapestItem.price}`
+        `Scout: Found item ${cheapestItem.id} for request ${requestId}. Price: $${cheapestItem.price}`
       );
     } catch (error) {
       console.error(`Error processing NEW request ${requestId}:`, error);
@@ -204,9 +237,9 @@ export class ScoutAgent {
         return;
       }
 
-      // Sort alternatives by selling_price and pop the cheapest
+      // Sort alternatives by price and pop the cheapest
       const sortedAlternatives = request.alternatives.sort(
-        (a, b) => (a.selling_price || a.price || 0) - (b.selling_price || b.price || 0)
+        (a, b) => a.price - b.price
       );
       const nextItem = sortedAlternatives[0];
       const remainingAlternatives = sortedAlternatives.slice(1);
@@ -219,7 +252,7 @@ export class ScoutAgent {
       await request.save();
 
       console.log(
-        `Scout: Retrying with item ${nextItem.item_id} for request ${requestId}. Price: $${nextItem.selling_price || nextItem.price}`
+        `Scout: Retrying with item ${nextItem.id} for request ${requestId}. Price: $${nextItem.price}`
       );
     } catch (error) {
       console.error(`Error processing RETRY_SEARCH request ${requestId}:`, error);

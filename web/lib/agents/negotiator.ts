@@ -48,7 +48,9 @@ export class NegotiatorAgent {
 
       const foundItem = request.found_item;
       const budget = request.budget;
-      const minimumPrice = foundItem.minimum_price || foundItem.selling_price || foundItem.price || 0;
+      // New schema: use price field, minimum acceptable is 80% of price
+      const listedPrice = foundItem.price || 0;
+      const minimumPrice = listedPrice * 0.8;
 
       // Create tools
       const sendOfferToSeller = tool({
@@ -206,13 +208,14 @@ export class NegotiatorAgent {
 Your goal is to get the seller to accept an offer within the buyer's budget of $${budget}.
 
 Item Details:
-- Item ID: ${foundItem.item_id}
-- Item Name: ${foundItem.name}
-- Minimum Price: $${minimumPrice}
+- Item ID: ${foundItem.id}
+- Size: ${foundItem.size}
+- Listed Price: $${listedPrice}
+- Minimum Acceptable Price: $${minimumPrice.toFixed(2)}
 - Seller Wallet: ${foundItem.seller_wallet}
 
 Rules:
-- You can make strategic offers based on the item's minimum_price ($${minimumPrice}) and buyer's budget ($${budget})
+- You can make strategic offers based on the minimum price ($${minimumPrice.toFixed(2)}) and buyer's budget ($${budget})
 - Track your negotiation rounds (you have 3 total)
 - If seller rejects after 3 rounds, call setRetryStatus() with feedback explaining why negotiation failed
 - If seller accepts, call processPayment() immediately with the offer_id and seller_wallet from the response
@@ -226,7 +229,7 @@ Rules:
       let messages: Array<{ role: 'user' | 'assistant'; content: string }> = [
         {
           role: 'user',
-          content: `Start negotiating for item ${foundItem.item_id}. Budget: $${budget}, Minimum: $${minimumPrice}. You have ${maxRounds} rounds.`,
+          content: `Start negotiating for item ${foundItem.id}. Budget: $${budget}, Minimum: $${minimumPrice.toFixed(2)}. You have ${maxRounds} rounds.`,
         },
       ];
 

@@ -33,8 +33,8 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // Fetch item from inventory
-    const item = await InventoryItem.findOne({ item_id });
+    // Fetch item from inventory using 'id' field (new schema)
+    const item = await InventoryItem.findOne({ id: item_id });
     if (!item) {
       return NextResponse.json(
         {
@@ -50,8 +50,11 @@ export async function POST(request: NextRequest) {
       );
     }
 
+    // Calculate minimum acceptable price (80% of listed price)
+    const minimum_price = item.price * 0.8;
+
     // Verify offer_amount >= minimum_price
-    if (offer_amount < item.minimum_price) {
+    if (offer_amount < minimum_price) {
       return NextResponse.json(
         {
           accepted: false,
@@ -59,8 +62,8 @@ export async function POST(request: NextRequest) {
           item: item_id,
           offered_amount: offer_amount,
           accepted_amount: null,
-          counter_offer: item.minimum_price,
-          message: `Offer ${offer_amount} is below minimum price ${item.minimum_price}. Try again!`,
+          counter_offer: minimum_price,
+          message: `Offer $${offer_amount} is below minimum acceptable price $${minimum_price.toFixed(2)}. Try again!`,
         },
         { status: 400 }
       );
@@ -79,9 +82,9 @@ export async function POST(request: NextRequest) {
         item: item_id,
         offered_amount: offer_amount,
         accepted_amount: offer_amount,
-        seller_wallet: item.seller_wallet,
+        seller_wallet: item.SELLER_WALLET_ADDRESS,
         counter_offer: null,
-        message: `Offer accepted! Use offer_id '${offer_id}' with seller_wallet '${item.seller_wallet}' to complete payment.`,
+        message: `Offer accepted! Use offer_id '${offer_id}' with seller_wallet '${item.SELLER_WALLET_ADDRESS}' to complete payment.`,
       });
     } else {
       return NextResponse.json({

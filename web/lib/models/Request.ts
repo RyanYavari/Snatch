@@ -20,19 +20,18 @@ export interface NegotiationHistoryEntry {
 export interface TargetItem {
   description?: string;
   image_url: string;
-  embedding: number[]; // 1024-dim from Voyage
+  image_embedding: number[]; // 2048-dim image embedding
+  metadata_embedding?: number[]; // 2048-dim metadata embedding (optional)
 }
 
 export interface FoundItem {
-  item_id: string;
-  name: string;
-  selling_price: number;
-  price?: number; // Legacy field, use selling_price
-  minimum_price?: number;
-  seller?: string;
-  seller_wallet: string;
-  description?: string;
-  url?: string;
+  id: string; // Item ID from inventory
+  size: string;
+  price: number;
+  image: string;
+  seller_wallet: string; // Maps from SELLER_WALLET_ADDRESS
+  metadata?: Record<string, any>;
+  score?: number; // Vector search score
   [key: string]: any;
 }
 
@@ -69,31 +68,28 @@ const RequestSchema: Schema = new Schema(
     target_item: {
       description: String,
       image_url: { type: String, required: true },
-      embedding: { type: [Number], default: [] }, // 1024-dim from Voyage
+      image_embedding: { type: [Number], default: [] }, // 2048-dim image embedding
+      metadata_embedding: { type: [Number], default: [] }, // 2048-dim metadata embedding
     },
     found_item: {
-      item_id: String,
-      name: String,
-      selling_price: Number,
-      price: Number, // Legacy field
-      minimum_price: Number,
-      seller: String,
+      id: String,
+      size: String,
+      price: Number,
+      image: String,
       seller_wallet: String,
-      description: String,
-      url: String,
+      metadata: Schema.Types.Mixed,
+      score: Number,
     },
     alternatives: {
       type: [
         {
-          item_id: String,
-          name: String,
-          selling_price: Number,
-          price: Number, // Legacy field
-          minimum_price: Number,
-          seller: String,
+          id: String,
+          size: String,
+          price: Number,
+          image: String,
           seller_wallet: String,
-          description: String,
-          url: String,
+          metadata: Schema.Types.Mixed,
+          score: Number,
         },
       ],
       default: [],
@@ -127,7 +123,8 @@ const RequestSchema: Schema = new Schema(
 );
 
 // Index for vector search (MongoDB Atlas will create the vector search index separately)
-RequestSchema.index({ 'target_item.embedding': '2dsphere' });
+RequestSchema.index({ 'target_item.image_embedding': '2dsphere' });
+RequestSchema.index({ 'target_item.metadata_embedding': '2dsphere' });
 
 export const Request: Model<IRequest> =
   mongoose.models.Request || mongoose.model<IRequest>('Request', RequestSchema);

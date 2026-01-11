@@ -1,59 +1,54 @@
 import mongoose, { Schema, Document, Model } from 'mongoose';
 
 export interface IInventoryItem extends Document {
-  item_id: string;
-  name: string;
-  description?: string;
-  selling_price: number;
-  minimum_price: number;
-  seller: string; // Person/entity selling the item
-  seller_wallet: string;
-  image_url?: string;
-  embedding: number[]; // 1024-dim from Voyage Multimodal-3
-  metadata?: Record<string, any>;
+  id: string; // Unique item ID
+  size: string; // Item size
+  price: number; // Selling price
+  image: string; // Image URL
+  SELLER_WALLET_ADDRESS: string; // Seller's wallet address
+  metadata: Record<string, any>; // Item metadata
+  metadata_embedding: number[]; // 2048-dim metadata embedding
+  image_embedding: number[]; // 2048-dim image embedding
   createdAt: Date;
   updatedAt: Date;
 }
 
 const InventoryItemSchema: Schema = new Schema(
   {
-    item_id: {
+    id: {
       type: String,
       required: true,
       unique: true,
       index: true,
     },
-    name: {
+    size: {
       type: String,
       required: true,
     },
-    description: String,
-    selling_price: {
+    price: {
       type: Number,
       required: true,
       min: 0,
     },
-    minimum_price: {
-      type: Number,
-      required: true,
-      min: 0,
-    },
-    seller: {
+    image: {
       type: String,
       required: true,
     },
-    seller_wallet: {
+    SELLER_WALLET_ADDRESS: {
       type: String,
       required: true,
-    },
-    image_url: String,
-    embedding: {
-      type: [Number],
-      default: [],
     },
     metadata: {
       type: Schema.Types.Mixed,
       default: {},
+    },
+    metadata_embedding: {
+      type: [Number],
+      default: [],
+    },
+    image_embedding: {
+      type: [Number],
+      default: [],
     },
   },
   {
@@ -62,8 +57,10 @@ const InventoryItemSchema: Schema = new Schema(
   }
 );
 
-// Index for vector search (MongoDB Atlas will create the vector search index separately)
-InventoryItemSchema.index({ embedding: '2dsphere' });
+// Indexes for vector search (MongoDB Atlas will create vector search indexes separately)
+// Create two vector indexes: one for image_embedding, one for metadata_embedding
+InventoryItemSchema.index({ image_embedding: '2dsphere' });
+InventoryItemSchema.index({ metadata_embedding: '2dsphere' });
 
 export const InventoryItem: Model<IInventoryItem> =
   mongoose.models.InventoryItem ||
